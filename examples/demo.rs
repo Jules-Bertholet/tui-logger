@@ -8,19 +8,15 @@ use log::*;
 use termion::{
     input::{MouseTerminal, TermRead},
     raw::IntoRawMode,
-    screen::AlternateScreen,
+    screen::IntoAlternateScreen,
 };
 
-#[cfg(feature = "ratatui-support")]
-use ratatui as tui;
-
-use tui::backend::Backend;
-use tui::backend::TermionBackend;
-use tui::layout::{Constraint, Direction, Layout, Rect};
-use tui::style::{Color, Modifier, Style};
-use tui::widgets::{Block, Borders, Gauge, Tabs};
-use tui::Frame;
-use tui::Terminal;
+use ratatui::backend::{Backend, TermionBackend};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::widgets::{Block, Borders, Gauge, Tabs};
+use ratatui::Frame;
+use ratatui::Terminal;
 use tui_logger::*;
 
 struct App {
@@ -38,7 +34,7 @@ enum AppEvent {
 
 fn demo_application(tx: mpsc::Sender<AppEvent>) {
     let one_second = time::Duration::from_millis(1_000);
-    let mut lp_cnt = (1..=100).into_iter();
+    let mut lp_cnt = 1..=100;
     loop {
         trace!(target:"DEMO", "Sleep one second");
         thread::sleep(one_second);
@@ -60,7 +56,7 @@ fn main() -> std::result::Result<(), std::io::Error> {
     let backend = {
         let stdout = io::stdout().into_raw_mode().unwrap();
         let stdout = MouseTerminal::from(stdout);
-        let stdout = AlternateScreen::from(stdout);
+        let stdout = stdout.into_alternate_screen().unwrap();
         TermionBackend::new(stdout)
     };
 
@@ -175,7 +171,7 @@ fn main() -> std::result::Result<(), std::io::Error> {
 }
 
 fn draw_frame<B: Backend>(t: &mut Frame<B>, size: Rect, app: &mut App) {
-    let tabs: Vec<tui::text::Spans> = vec!["V1".into(), "V2".into(), "V3".into(), "V4".into()];
+    let tabs: Vec<ratatui::text::Spans> = vec!["V1".into(), "V2".into(), "V3".into(), "V4".into()];
     let sel = app.selected_tab;
 
     if app.states.len() <= sel {

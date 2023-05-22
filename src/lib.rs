@@ -111,19 +111,19 @@
 //!
 //! Run demo with tui and termion:
 //!
-//! ```
+//! ```text
 //! cargo run --example demo --no-default-features -F tui-rs,tui/termion
 //! ```
 //!
 //! or simply:
 //!
-//! ```
+//! ```text
 //! cargo run --example demo
 //! ```
 //!
 //! Run demo with ratatui and termion:
 //!
-//! ```
+//! ```text
 //! cargo run --example demo --no-default-features -F ratatui-support,ratatui/termion
 //! ```
 //!
@@ -200,17 +200,14 @@ use std::io::Write;
 use std::mem;
 use std::sync::Arc;
 
-#[cfg(feature = "ratatui-support")]
-use ratatui as tui;
-
 use chrono::{DateTime, Local};
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use parking_lot::Mutex;
-use tui::buffer::Buffer;
-use tui::layout::{Constraint, Direction, Layout, Rect};
-use tui::style::{Color, Modifier, Style};
-use tui::text::{Span, Spans};
-use tui::widgets::{Block, BorderType, Borders, Widget};
+use ratatui::buffer::Buffer;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Span, Spans};
+use ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 mod circular;
 #[cfg(feature = "slog-support")]
@@ -856,7 +853,7 @@ impl<'b> Widget for TuiLoggerTargetWidget<'b> {
                     cell.set_style(cell_style);
                     cell.symbol = sym.to_string();
                 }
-                buf.set_stringn(la_left + 5, la_top + i as u16, &":", la_width, self.style);
+                buf.set_stringn(la_left + 5, la_top + i as u16, ":", la_width, self.style);
                 buf.set_stringn(
                     la_left + 6,
                     la_top + i as u16,
@@ -1202,7 +1199,7 @@ impl<'b> Widget for TuiLoggerWidget<'b> {
         }
         let la_left = list_area.left();
         let la_top = list_area.top();
-        let la_width = list_area.width as usize;
+        let _la_width = list_area.width as usize;
 
         // lines is a vector with bottom line at index 0
         // wrapped_lines will be a vector with top line first
