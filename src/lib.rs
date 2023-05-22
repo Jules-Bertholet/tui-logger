@@ -120,13 +120,13 @@
 //! ```
 //! cargo run --example demo
 //! ```
-//! 
+//!
 //! Run demo with ratatui and termion:
 //!
 //! ```
 //! cargo run --example demo --no-default-features -F ratatui-support,ratatui/termion
 //! ```
-//! 
+//!
 //! ## `slog` support
 //!
 //! `tui-logger` provides a TuiSlogDrain which implements `slog::Drain` and will route all records
@@ -208,8 +208,8 @@ use log::{Level, LevelFilter, Log, Metadata, Record};
 use parking_lot::Mutex;
 use tui::buffer::Buffer;
 use tui::layout::{Constraint, Direction, Layout, Rect};
-use tui::style::{Modifier, Style};
-use tui::text::Spans;
+use tui::style::{Color, Modifier, Style};
+use tui::text::{Span, Spans};
 use tui::widgets::{Block, BorderType, Borders, Widget};
 
 mod circular;
@@ -886,11 +886,11 @@ pub struct TuiLoggerWidget<'b> {
     /// Base style of the widget
     style: Style,
     /// Level based style
-    style_error: Option<Style>,
-    style_warn: Option<Style>,
-    style_debug: Option<Style>,
     style_trace: Option<Style>,
+    style_debug: Option<Style>,
     style_info: Option<Style>,
+    style_warn: Option<Style>,
+    style_error: Option<Style>,
     format_separator: char,
     format_timestamp: Option<String>,
     format_output_level: Option<TuiLoggerLevelOutput>,
@@ -905,11 +905,11 @@ impl<'b> Default for TuiLoggerWidget<'b> {
         TuiLoggerWidget {
             block: None,
             style: Default::default(),
-            style_error: None,
-            style_warn: None,
-            style_debug: None,
-            style_trace: None,
-            style_info: None,
+            style_trace: Some(Style::default().fg(Color::Cyan)),
+            style_debug: Some(Style::default().fg(Color::Blue)),
+            style_info: Some(Style::default().fg(Color::Green)),
+            style_warn: Some(Style::default().fg(Color::Yellow)),
+            style_error: Some(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
             format_separator: ':',
             format_timestamp: Some("%H:%M:%S".to_string()),
             format_output_level: Some(TuiLoggerLevelOutput::Long),
@@ -1077,50 +1077,60 @@ impl<'b> TuiLoggerWidget<'b> {
         self.state = state.inner.clone();
         self
     }
-    fn format_event(&self, evt: &ExtLogRecord) -> (String, Option<Style>) {
-        let mut output = String::new();
-        let (col_style, lev_long, lev_abbr, with_loc) = match evt.level {
+    fn format_event(&self, evt: &ExtLogRecord) -> Spans {
+        let mut output = Spans(Vec::new());
+
+        let (lev_style, lev_long, lev_abbr, with_loc) = match evt.level {
             log::Level::Error => (self.style_error, "ERROR", "E", true),
             log::Level::Warn => (self.style_warn, "WARN ", "W", true),
             log::Level::Info => (self.style_info, "INFO ", "I", false),
             log::Level::Debug => (self.style_debug, "DEBUG", "D", true),
             log::Level::Trace => (self.style_trace, "TRACE", "T", true),
         };
+        let format_sep_span: Span = self.format_separator.to_string().into();
         if let Some(fmt) = self.format_timestamp.as_ref() {
-            output.push_str(&format!("{}", evt.timestamp.format(fmt)));
-            output.push(self.format_separator);
+            output
+                .0
+                .push(format!("{}{}", evt.timestamp.format(fmt), self.format_separator).into());
         }
         match &self.format_output_level {
             None => {}
             Some(TuiLoggerLevelOutput::Abbreviated) => {
-                output.push_str(lev_abbr);
-                output.push(self.format_separator);
+                let mut lev: Span = lev_abbr.to_owned().into();
+                if let Some(style) = lev_style {
+                    lev.style = style
+                }
+                output.0.push(lev);
+                output.0.push(format_sep_span.clone());
             }
             Some(TuiLoggerLevelOutput::Long) => {
-                output.push_str(lev_long);
-                output.push(self.format_separator);
+                let mut lev: Span = lev_long.to_owned().into();
+                if let Some(style) = lev_style {
+                    lev.style = style
+                }
+                output.0.push(lev);
+                output.0.push(format_sep_span.clone());
             }
         }
         if self.format_output_target {
-            output.push_str(&evt.target);
-            output.push(self.format_separator);
+            output.0.push(evt.target.clone().into());
+            output.0.push(format_sep_span.clone());
         }
         if with_loc {
             if self.format_output_file {
-                output.push_str(&evt.file);
-                output.push(self.format_separator);
+                output.0.push(evt.file.clone().into());
+                output.0.push(format_sep_span.clone());
             }
             if self.format_output_line {
-                output.push_str(&format!("{}", evt.line));
-                output.push(self.format_separator);
+                output.0.push(format!("{}", evt.line).into());
+                output.0.push(format_sep_span.clone());
             }
         }
-        (output, col_style)
+        output
     }
 }
 impl<'b> Widget for TuiLoggerWidget<'b> {
     fn render(mut self, area: Rect, buf: &mut Buffer) {
-        buf.set_style(area, self.style);
         let list_area = match self.block.take() {
             Some(b) => {
                 let inner_area = b.inner(area);
@@ -1135,7 +1145,7 @@ impl<'b> Widget for TuiLoggerWidget<'b> {
 
         let mut state = self.state.lock();
         let la_height = list_area.height as usize;
-        let mut lines: Vec<(Option<Style>, u16, String)> = vec![];
+        let mut lines: Vec<(u16, Spans)> = vec![];
         let indent = 9;
         {
             state.opt_timestamp_next_page = None;
@@ -1148,11 +1158,9 @@ impl<'b> Widget for TuiLoggerWidget<'b> {
                     if *level < evt.level {
                         continue;
                     }
-                } else {
-                    if let Some(level) = state.config.default_display_level {
-                        if level < evt.level {
-                            continue;
-                        }
+                } else if let Some(level) = state.config.default_display_level {
+                    if level < evt.level {
+                        continue;
                     }
                 }
                 if state.focus_selected {
@@ -1173,13 +1181,16 @@ impl<'b> Widget for TuiLoggerWidget<'b> {
                 if !circular.is_empty() {
                     state.opt_timestamp_next_page = circular.take().first().cloned();
                 }
-                let (mut output, col_style) = self.format_event(evt);
-                let mut sublines: Vec<&str> = evt.msg.lines().rev().collect();
-                output.push_str(sublines.pop().unwrap());
-                for subline in sublines {
-                    lines.push((col_style, indent, subline.to_string()));
+                let mut front_matter = self.format_event(evt);
+                let mut msg_text = ansi_to_tui::IntoText::into_text(&evt.msg).unwrap().lines;
+                if let Some(first_line) = msg_text.pop() {
+                    front_matter.0.extend(first_line.0);
+                    for line in msg_text.into_iter().rev() {
+                        lines.push((indent, line));
+                    }
                 }
-                lines.push((col_style, 0, output));
+                lines.push((0, front_matter));
+
                 if lines.len() == la_height {
                     break;
                 }
@@ -1196,8 +1207,9 @@ impl<'b> Widget for TuiLoggerWidget<'b> {
         // lines is a vector with bottom line at index 0
         // wrapped_lines will be a vector with top line first
         let mut wrapped_lines = CircularBuffer::new(la_height);
-        while let Some((style, left, line)) = lines.pop() {
-            if line.chars().count() > la_width {
+        while let Some((indent, line)) = lines.pop() {
+            // FIXME
+            /*if line.width() > la_width {
                 wrapped_lines.push((style, left, line.chars().take(la_width).collect()));
                 let mut remain: String = line.chars().skip(la_width).collect();
                 let rem_width = la_width - indent as usize;
@@ -1209,7 +1221,8 @@ impl<'b> Widget for TuiLoggerWidget<'b> {
                 wrapped_lines.push((style, indent, remain.to_owned()));
             } else {
                 wrapped_lines.push((style, left, line));
-            }
+            }*/
+            wrapped_lines.push((indent, line));
         }
 
         let offset: u16 = if state.opt_timestamp_bottom.is_none() {
@@ -1219,13 +1232,12 @@ impl<'b> Widget for TuiLoggerWidget<'b> {
             (la_height - lines_cnt) as u16
         };
 
-        for (i, (sty, left, l)) in wrapped_lines.iter().enumerate() {
-            buf.set_stringn(
-                la_left + left,
+        for (i, (indent, line)) in wrapped_lines.iter().enumerate() {
+            buf.set_spans(
+                la_left + indent,
                 la_top + i as u16 + offset,
-                l,
-                l.len(),
-                sty.unwrap_or(self.style),
+                line,
+                line.width().try_into().unwrap_or(u16::MAX),
             );
         }
     }
@@ -1268,11 +1280,11 @@ impl<'a> Default for TuiLoggerSmartWidget<'a> {
             border_style: Style::default(),
             border_type: BorderType::Plain,
             highlight_style: None,
-            style_error: None,
-            style_warn: None,
-            style_debug: None,
-            style_trace: None,
-            style_info: None,
+            style_trace: Some(Style::default().fg(Color::Cyan)),
+            style_debug: Some(Style::default().fg(Color::Blue)),
+            style_info: Some(Style::default().fg(Color::Green)),
+            style_warn: Some(Style::default().fg(Color::Yellow)),
+            style_error: Some(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
             style_show: None,
             style_hide: None,
             style_off: None,
