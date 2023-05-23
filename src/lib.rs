@@ -187,6 +187,10 @@
 //! * [Ákos Hadnagy](https://github.com/ahadnagy) for providing patch in (https://github.com/gin66/tui-logger/issues/31) for tracing-subscriber support
 //! * [Orhun Parmaksız](https://github.com/orhun) for providing patches in [#33](https://github.com/gin66/tui-logger/issues/33), [#34](https://github.com/gin66/tui-logger/issues/34) and [#37](https://github.com/gin66/tui-logger/issues/37)
 //!
+
+#![warn(rust_2018_idioms)]
+#![warn(clippy::semicolon_if_nothing_returned)]
+
 #[macro_use]
 extern crate lazy_static;
 
@@ -208,6 +212,8 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Span, Spans};
 use ratatui::widgets::{Block, BorderType, Borders, Widget};
+use unicode_segmentation::GraphemeCursor;
+use unicode_width::UnicodeWidthStr;
 
 mod circular;
 #[cfg(feature = "slog-support")]
@@ -281,7 +287,7 @@ impl LevelConfig {
         self.default_display_level = Some(level);
     }
     /// Retrieve an iter for all the targets stored in the hash table.
-    pub fn keys(&self) -> Keys<String, LevelFilter> {
+    pub fn keys(&self) -> Keys<'_, String, LevelFilter> {
         self.config.keys()
     }
     /// Get the levelfilter for a given target.
@@ -289,7 +295,7 @@ impl LevelConfig {
         self.config.get(target)
     }
     /// Retrieve an iterator through all entries of the table.
-    pub fn iter(&self) -> Iter<String, LevelFilter> {
+    pub fn iter(&self) -> Iter<'_, String, LevelFilter> {
         self.config.iter()
     }
     /// Merge an origin LevelConfig into this one.
@@ -483,7 +489,7 @@ pub fn set_level_for_target(target: &str, levelfilter: LevelFilter) {
 }
 
 impl TuiLogger {
-    fn raw_log(&self, record: &Record) {
+    fn raw_log(&self, record: &Record<'_>) {
         let log_entry = ExtLogRecord {
             timestamp: chrono::Local::now(),
             level: record.level(),
@@ -497,7 +503,7 @@ impl TuiLogger {
 }
 
 impl Log for TuiLogger {
-    fn enabled(&self, metadata: &Metadata) -> bool {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
         let h = fxhash::hash64(metadata.target());
         let hs = self.hot_select.lock();
         if let Some(&levelfilter) = hs.hashtable.get(&h) {
@@ -507,9 +513,9 @@ impl Log for TuiLogger {
         }
     }
 
-    fn log(&self, record: &Record) {
+    fn log(&self, record: &Record<'_>) {
         if self.enabled(record.metadata()) {
-            self.raw_log(record)
+            self.raw_log(record);
         }
     }
 
@@ -525,8 +531,15 @@ impl Drain {
         Drain
     }
     /// Log the given record to the main tui-logger
-    pub fn log(&self, record: &Record) {
-        TUI_LOGGER.raw_log(record)
+    pub fn log(&self, record: &Record<'_>) {
+        TUI_LOGGER.raw_log(record);
+    }
+}
+
+impl Default for Drain {
+    #[inline]
+    fn default() -> Self {
+        Drain
     }
 }
 
@@ -1074,7 +1087,7 @@ impl<'b> TuiLoggerWidget<'b> {
         self.state = state.inner.clone();
         self
     }
-    fn format_event(&self, evt: &ExtLogRecord) -> Spans {
+    fn format_event(&self, evt: &ExtLogRecord) -> Spans<'_> {
         let mut output = Spans(Vec::new());
 
         let (lev_style, lev_long, lev_abbr, with_loc) = match evt.level {
@@ -1084,7 +1097,7 @@ impl<'b> TuiLoggerWidget<'b> {
             log::Level::Debug => (self.style_debug, "DEBUG", "D", true),
             log::Level::Trace => (self.style_trace, "TRACE", "T", true),
         };
-        let format_sep_span: Span = self.format_separator.to_string().into();
+        let format_sep_span: Span<'_> = self.format_separator.to_string().into();
         if let Some(fmt) = self.format_timestamp.as_ref() {
             output
                 .0
@@ -1093,17 +1106,17 @@ impl<'b> TuiLoggerWidget<'b> {
         match &self.format_output_level {
             None => {}
             Some(TuiLoggerLevelOutput::Abbreviated) => {
-                let mut lev: Span = lev_abbr.to_owned().into();
+                let mut lev: Span<'_> = lev_abbr.to_owned().into();
                 if let Some(style) = lev_style {
-                    lev.style = style
+                    lev.style = style;
                 }
                 output.0.push(lev);
                 output.0.push(format_sep_span.clone());
             }
             Some(TuiLoggerLevelOutput::Long) => {
-                let mut lev: Span = lev_long.to_owned().into();
+                let mut lev: Span<'_> = lev_long.to_owned().into();
                 if let Some(style) = lev_style {
-                    lev.style = style
+                    lev.style = style;
                 }
                 output.0.push(lev);
                 output.0.push(format_sep_span.clone());
@@ -1142,7 +1155,7 @@ impl<'b> Widget for TuiLoggerWidget<'b> {
 
         let mut state = self.state.lock();
         let la_height = list_area.height as usize;
-        let mut lines: Vec<(u16, Spans)> = vec![];
+        let mut lines: Vec<(u16, Spans<'_>)> = vec![];
         let indent = 9;
         {
             state.opt_timestamp_next_page = None;
@@ -1199,27 +1212,19 @@ impl<'b> Widget for TuiLoggerWidget<'b> {
         }
         let la_left = list_area.left();
         let la_top = list_area.top();
-        let _la_width = list_area.width as usize;
+        let la_width = list_area.width as usize;
 
         // lines is a vector with bottom line at index 0
         // wrapped_lines will be a vector with top line first
         let mut wrapped_lines = CircularBuffer::new(la_height);
         while let Some((indent, line)) = lines.pop() {
-            // FIXME
-            /*if line.width() > la_width {
-                wrapped_lines.push((style, left, line.chars().take(la_width).collect()));
-                let mut remain: String = line.chars().skip(la_width).collect();
-                let rem_width = la_width - indent as usize;
-                while remain.chars().count() > rem_width {
-                    let remove: String = remain.chars().take(rem_width).collect();
-                    wrapped_lines.push((style, indent, remove));
-                    remain = remain.chars().skip(rem_width).collect();
-                }
-                wrapped_lines.push((style, indent, remain.to_owned()));
-            } else {
-                wrapped_lines.push((style, left, line));
-            }*/
-            wrapped_lines.push((indent, line));
+            let (head, mut tail) = split_span_at(line, la_width - indent as usize);
+            wrapped_lines.push((indent, head));
+            while let Some(s) = tail {
+                let (h, t) = split_span_at(s, la_width);
+                tail = t;
+                wrapped_lines.push((0, h));
+            }
         }
 
         let offset: u16 = if state.opt_timestamp_bottom.is_none() {
@@ -1238,6 +1243,58 @@ impl<'b> Widget for TuiLoggerWidget<'b> {
             );
         }
     }
+}
+
+fn split_span_at(mut spans: Spans<'_>, width: usize) -> (Spans<'_>, Option<Spans<'_>>) {
+    if spans.width() <= width {
+        return (spans, None);
+    }
+
+    let mut end: Spans<'_> = Spans(Vec::new());
+    let mut split_after_index: usize = 0;
+    let mut cum_width: usize = 0;
+    while let Some(s) = spans.0.get_mut(split_after_index) {
+        split_after_index += 1;
+        cum_width += s.width();
+        match (width as isize) - (cum_width as isize) {
+            1.. => (),
+            0 => break,
+            diff @ ..=-1 => {
+                let target_width = (s.width() as isize + diff) as usize;
+                let mut split_point: usize = 0;
+                let mut accumulated_width: usize = 0;
+                let mut cusrsor: GraphemeCursor = GraphemeCursor::new(0, s.content.len(), true);
+                'find_split_point: loop {
+                    match cusrsor.next_boundary(&s.content, 0) {
+                        Ok(Some(boundary)) => {
+                            accumulated_width += s.content[split_point..boundary].width();
+                            if accumulated_width <= target_width {
+                                split_point = boundary;
+                            }
+
+                            if accumulated_width >= target_width {
+                                break 'find_split_point;
+                            }
+                        }
+                        _ => break 'find_split_point,
+                    }
+                }
+
+                let (front, back) = s.content.split_at(width);
+                end.0.push(Span {
+                    content: back.to_owned().into(),
+                    style: s.style,
+                });
+
+                s.content = front.to_owned().into();
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    end.0.extend(spans.0.drain(split_after_index..));
+
+    (spans, Some(end))
 }
 
 /// The Smart Widget combines the TuiLoggerWidget and the TuiLoggerTargetWidget
@@ -1484,7 +1541,7 @@ impl<'a> Widget for TuiLoggerSmartWidget<'a> {
                         if hide_off && levelfilter == &LevelFilter::Off {
                             continue;
                         }
-                        width = width.max(t.len())
+                        width = width.max(t.len());
                     }
                 }
             }

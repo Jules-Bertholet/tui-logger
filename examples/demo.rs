@@ -68,16 +68,13 @@ fn main() -> std::result::Result<(), std::io::Error> {
     let (tx, rx) = mpsc::channel();
     let tx_event = tx.clone();
     thread::spawn({
-        let f = {
-            let stdin = io::stdin();
-            move || {
-                for c in stdin.events() {
-                    trace!(target:"DEMO", "Stdin event received {:?}", c);
-                    tx_event.send(AppEvent::Termion(c.unwrap())).unwrap();
-                }
+        let stdin = io::stdin();
+        move || {
+            for c in stdin.events() {
+                trace!(target:"DEMO", "Stdin event received {:?}", c);
+                tx_event.send(AppEvent::Termion(c.unwrap())).unwrap();
             }
-        };
-        f
+        }
     });
     thread::spawn(move || {
         demo_application(tx);
@@ -159,9 +156,9 @@ fn main() -> std::result::Result<(), std::io::Error> {
                 app.opt_info_cnt = opt_cnt;
             }
         }
-        terminal.draw(|mut f| {
+        terminal.draw(|f| {
             let size = f.size();
-            draw_frame(&mut f, size, &mut app);
+            draw_frame(f, size, &mut app);
         })?;
     }
     terminal.show_cursor().unwrap();
@@ -215,7 +212,7 @@ fn draw_frame<B: Backend>(t: &mut Frame<B>, size: Rect, app: &mut App) {
         .output_target(true)
         .output_file(true)
         .output_line(true)
-        .state(&mut app.states[sel]);
+        .state(&app.states[sel]);
     t.render_widget(tui_sm, chunks[1]);
 
     // show two TuiWidgetState side-by-side

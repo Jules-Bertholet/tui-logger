@@ -94,7 +94,7 @@ impl<T> CircularBuffer<T> {
             let pos = self.next_write_pos % max_depth;
             let mut xvec = self.buffer.split_off(pos);
             consumed.append(&mut xvec);
-            consumed.append(&mut self.buffer)
+            consumed.append(&mut self.buffer);
         }
         self.next_write_pos = 0;
         consumed
@@ -109,7 +109,7 @@ impl<T> CircularBuffer<T> {
     }
     /// Return an iterator to step through all elements in the sequence,
     /// as these have been pushed (FIFO)
-    pub fn iter(&mut self) -> iter::Chain<std::slice::Iter<T>, std::slice::Iter<T>> {
+    pub fn iter(&mut self) -> iter::Chain<std::slice::Iter<'_, T>, std::slice::Iter<'_, T>> {
         let max_depth = self.buffer.capacity();
         if self.next_write_pos <= max_depth {
             // If buffer is not completely filled, then just iterate through it
@@ -125,7 +125,7 @@ impl<T> CircularBuffer<T> {
     /// as these have been pushed (LIFO)
     pub fn rev_iter(
         &mut self,
-    ) -> iter::Chain<std::iter::Rev<std::slice::Iter<T>>, std::iter::Rev<std::slice::Iter<T>>> {
+    ) -> iter::Chain<std::iter::Rev<std::slice::Iter<'_, T>>, std::iter::Rev<std::slice::Iter<'_, T>>> {
         let max_depth = self.buffer.capacity();
         if self.next_write_pos <= max_depth {
             // If buffer is not completely filled, then just iterate through it
