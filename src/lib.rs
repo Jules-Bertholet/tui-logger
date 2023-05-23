@@ -1218,7 +1218,7 @@ impl<'b> Widget for TuiLoggerWidget<'b> {
         // wrapped_lines will be a vector with top line first
         let mut wrapped_lines = CircularBuffer::new(la_height);
         while let Some((indent, line)) = lines.pop() {
-            let (head, mut tail) = split_span_at(line, la_width - indent as usize);
+            let (head, mut tail) = split_span_at(line, la_width.saturating_sub(indent as usize));
             wrapped_lines.push((indent, head));
             while let Some(s) = tail {
                 let (h, t) = split_span_at(s, la_width);
