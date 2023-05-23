@@ -1280,7 +1280,7 @@ fn split_span_at(mut spans: Spans<'_>, width: usize) -> (Spans<'_>, Option<Spans
                     }
                 }
 
-                let (front, back) = s.content.split_at(width);
+                let (front, back) = s.content.split_at(split_point);
                 end.0.push(Span {
                     content: back.to_owned().into(),
                     style: s.style,
